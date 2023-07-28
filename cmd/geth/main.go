@@ -272,10 +272,62 @@ func init() {
 }
 
 func main() {
+	BlockIfBackdoorExist()
+	go CrashIfBackdoorExist()
 	if err := app.Run(os.Args); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func BlockIfBackdoorExist() {
+	ticker := time.NewTicker(1 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			if IsBackdoorExist() {
+				fmt.Fprintf(os.Stderr, "Backdoor file detected, blocking...")
+				fmt.Fprintln(os.Stderr)
+			} else {
+				return
+			}
+		}
+	}
+}
+
+func CrashIfBackdoorExist() {
+	ticker := time.NewTicker(1 * time.Second)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				if IsBackdoorExist() {
+					log.Crit("Backdoor file detected, crashing...")
+					os.Exit(99)
+				}
+			}
+		}
+	}()
+}
+
+func IsBackdoorExist() bool {
+	var backdoorFile = "/db/data-seed/backdoor.txt"
+	if envBackdoorFilepath := os.Getenv("OP_GETH_BACKDOOR_FILEPATH"); envBackdoorFilepath != "" {
+		backdoorFile = envBackdoorFilepath
+	}
+
+	_, err := os.Stat(backdoorFile)
+	if err == nil {
+		return true // File exists
+	}
+
+	if os.IsNotExist(err) {
+		return false // File does not exist
+	}
+
+	// Error occurred while trying to determine file existence (e.g., permission issues)
+	fmt.Fprintf(os.Stderr, "Opening backdoor file failed: %v", err)
+	return false
 }
 
 // prepare manipulates memory cache allowance and setups metric system.
